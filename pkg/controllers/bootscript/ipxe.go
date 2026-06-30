@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"net"
 	"strings"
 
 	apiv1 "github.com/openchami/boot-service/apis/boot.openchami.io/v1"
@@ -50,7 +51,7 @@ func (c *BootScriptController) prepareTemplateVars(config *apiv1.BootConfigurati
 		// Boot configuration
 		"Kernel":   config.Spec.Kernel,
 		"Initrd":   config.Spec.Initrd,
-		"Params":   config.Spec.Params,
+		"Params":   buildParams(config.Spec.Params, node.Spec.BootMAC),
 		"Priority": config.Spec.Priority,
 
 		// Configuration metadata
@@ -73,6 +74,33 @@ func extractFilename(urlOrPath string) string {
 
 	parts := strings.Split(urlOrPath, "/")
 	return parts[len(parts)-1]
+}
+
+// formatBootif formats a MAC address as a BOOTIF kernel parameter value (e.g. "01-aa-bb-cc-dd-ee-ff").
+func formatBootif(mac string) string {
+	hwAddr, err := net.ParseMAC(mac)
+	if err != nil {
+		return ""
+	}
+	parts := make([]string, len(hwAddr))
+	for i, b := range hwAddr {
+		parts[i] = fmt.Sprintf("%02x", b)
+	}
+	return "01-" + strings.Join(parts, "-")
+}
+
+func buildParams(params, mac string) string {
+	if mac == "" || strings.Contains(params, "BOOTIF=") {
+		return params
+	}
+	bootif := formatBootif(mac)
+	if bootif == "" {
+		return params
+	}
+	if params != "" {
+		return params + " BOOTIF=" + bootif
+	}
+	return "BOOTIF=" + bootif
 }
 
 // DefaultIPXETemplate is the standard template for generating iPXE scripts

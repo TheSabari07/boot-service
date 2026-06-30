@@ -82,7 +82,7 @@ func TestIPXETemplates(t *testing.T) {
 		"x0c0s0b0n0",
 		"vmlinuz",
 		"initramfs",
-		"console=tty0 console=ttyS0,115200",
+		"console=tty0 console=ttyS0,115200 BOOTIF=01-a4-bf-01-00-00-01",
 		"dhcp",
 		"boot",
 	}
@@ -143,7 +143,6 @@ func TestTemplateVariablePreparation(t *testing.T) {
 
 	vars := controller.prepareTemplateVars(config, testNode)
 
-	// Test node variables
 	if vars["XName"] != "x0c0s1b0n0" {
 		t.Errorf("Expected XName x0c0s1b0n0, got %v", vars["XName"])
 	}
@@ -156,19 +155,50 @@ func TestTemplateVariablePreparation(t *testing.T) {
 	if vars["Groups"] != "login,management" {
 		t.Errorf("Expected Groups login,management, got %v", vars["Groups"])
 	}
-
-	// Test config variables
 	if vars["Kernel"] != "http://files.example.com/vmlinuz-5.4.0" {
 		t.Errorf("Expected Kernel URL, got %v", vars["Kernel"])
 	}
-
-	// Test derived variables
 	if vars["KernelFilename"] != "vmlinuz-5.4.0" {
 		t.Errorf("Expected KernelFilename vmlinuz-5.4.0, got %v", vars["KernelFilename"])
 	}
 	if vars["InitrdFilename"] != "initramfs-5.4.0" {
 		t.Errorf("Expected InitrdFilename initramfs-5.4.0, got %v", vars["InitrdFilename"])
 	}
+	if vars["Params"] != "console=ttyS0,115200 BOOTIF=01-aa-bb-cc-dd-ee-ff" {
+		t.Errorf("Expected Params with BOOTIF, got %v", vars["Params"])
+	}
+
+	t.Run("EmptyParams", func(t *testing.T) {
+		cfg := &apiv1.BootConfiguration{
+			Spec: apiv1.BootConfigurationSpec{Kernel: config.Spec.Kernel, Params: ""},
+		}
+		v := controller.prepareTemplateVars(cfg, testNode)
+		if v["Params"] != "BOOTIF=01-aa-bb-cc-dd-ee-ff" {
+			t.Errorf("Expected BOOTIF only, got %v", v["Params"])
+		}
+	})
+
+	t.Run("AlreadyHasBOOTIF", func(t *testing.T) {
+		cfg := &apiv1.BootConfiguration{
+			Spec: apiv1.BootConfigurationSpec{
+				Kernel: config.Spec.Kernel,
+				Params: "console=ttyS0,115200 BOOTIF=01-11-22-33-44-55-66",
+			},
+		}
+		v := controller.prepareTemplateVars(cfg, testNode)
+		if v["Params"] != "console=ttyS0,115200 BOOTIF=01-11-22-33-44-55-66" {
+			t.Errorf("Expected unchanged Params, got %v", v["Params"])
+		}
+	})
+
+	t.Run("EmptyBootMAC", func(t *testing.T) {
+		noMacNode := &apiv1.Node{Spec: apiv1.NodeSpec{XName: "x0c0s1b0n0", BootMAC: ""}}
+		v := controller.prepareTemplateVars(config, noMacNode)
+		if v["Params"] != "console=ttyS0,115200" {
+			t.Errorf("Expected unchanged Params when no MAC, got %v", v["Params"])
+		}
+	})
+
 }
 
 // createTestController creates a minimal controller for testing
